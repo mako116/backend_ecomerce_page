@@ -114,11 +114,150 @@ app.post('/removeproduct', async(req,res)=>{
         name: req.body.name,
     })    
 })
+
+
 // creating api for all products
 app.get('/allproducts', async (req,res)=>{
     let products = await Product.find({});
     console.log("All products fetched");
     res.send(products)    
+})
+
+// scheme user model
+const User = mongoose.model('User',
+    {
+    name:{
+        type: String,
+    },
+    email:{
+        type: String,
+        unique: true,
+    },
+    password:{
+        type: String,
+    },
+    cartData:{
+        type: Object
+    },
+    date: {
+        type: Date,
+        default: Date.now,
+    }
+})
+
+
+// creating endpoints for registering the user
+app.post('/signup', async(req,res)=>{
+    let check = await User.findOne({email: req.body.email});
+    if(check){
+        return res.status(400).json({success: false, errors: 'Existing user found with same email'});
+    }
+    let cart = {};
+    for (let i = 0; i < 300; i++){
+        cart[i] = 0;
+    }
+
+    const user = new User(
+        {
+            name: req.body.username,
+            email: req.body.email,
+            password: req.body.password,
+            cartData:cart,
+        }
+    )
+    await user.save();
+
+    const data = {
+        user:{
+            id: user.id
+
+        }
+    }
+    const token = jwt.sign(data, 'secret_ecom');
+    res.json({success: true, token})
+})
+
+
+// creating endpoints for user login
+app.post('/login', async (req, res) =>{
+    let user = await User.findOne({email:req.body.email});
+    if(user) {
+        const passMatch = req.body.password === user.password;
+        if(passMatch){
+            const data = {
+                user: {
+                    id: user.id
+                }
+            }
+            const token= jwt.sign(data, 'secret_ecom');
+            res.json({success: true, token});
+        }else {
+            res.json({success:false, errors: "wrong Password"})
+        }
+    }else {
+        res.json({success:false, errors: "wrong Email address"})
+    }
+})
+
+// creating endpoints for latestproducts
+app.get('/newcollection', async(req,res)=>{
+    let products = await Product.find({});
+    let newcollection = products.slice(1).slice(-8);
+    console.log("newcollection fetched");
+    res.send(newcollection);
+})
+
+// creating endpoint for popular products
+app.get('/popularproducts', async (req, res)=>{
+    let products= await Product.find({category: "men"});
+    let popularproducts = products.slice(0, 4);
+    console.log("popular products fetched");
+    res.send(popularproducts);
+})
+
+
+
+// creating middlewear to fetch user
+const fetchUser = async (req, res, next)=>{
+    const token = req.header('auth-token');
+    if(!token){
+        res.status(401).send({errors: "please authenicate using valid login"});
+
+    }else{
+        try{
+            const data = jwt.verify(token, "secret_ecom");
+            req.user = data.user;
+            next();
+        }catch (error){
+            res.status(401).send({errors: "please authenicate using valid token"});
+        }
+    }
+}
+
+// creating endpoints for adding products to cartData
+
+app.post('/addtocart',fetchUser, async ( req, res)=>{
+    let userData = await User.findOne({_id: req.user.id})
+    userData.cartData[req.body.itemId] += 1;
+    await User.findByIdAndUpdate({_id:req.user.id}, {cartData:userData.cartData});
+    res.send("Added");
+}) 
+
+// creating endpoints for removing products to cartData
+app.post('/removefromcart',fetchUser, async ( req, res)=>{
+   console.log("Removed", req.body.itemId);    
+   let userData = await User.findOne({_id: req.user.id})
+   if (userData.cartData[req.body.itemId] > 0)
+    userData.cartData[req.body.itemId] -= 1;
+    await User.findByIdAndUpdate(
+    {_id:req.user.id}, 
+    {cartData:userData.cartData});
+    res.send("removed");
+}) 
+
+// creating endpoints  to get cart data
+app.post('/getcart', fetchUser,async(req,res)=>{
+    
 })
 
 app.listen(port, (error)=>{
